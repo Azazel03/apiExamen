@@ -42,9 +42,9 @@ app.get('/test', (req, res) => {
 app.post('/examen', async (req, res) => {
   const nameAPi = '/examen';
   const {base64Image} = req.body;
-  Logger.Info(nameAPi + ' request: ' + base64Image);
+  console.log(nameAPi + ' request: ' + base64Image);
   if (!base64Image) {
-    Logger.Info(nameAPi + ' response: Faltan datos requeridos')
+    console.log(nameAPi + ' response: Faltan datos requeridos')
     return res.status(400).json({ error: 'Faltan datos requeridos' });
   }
   try {
