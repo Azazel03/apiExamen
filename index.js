@@ -1,19 +1,16 @@
 import express from 'express';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import sharp from 'sharp';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import fetch from 'node-fetch'; // Asegúrate de tener node-fetch instalado o usa el fetch nativo de Node 18+
 
 dotenv.config();
 
 const app = express();
-// Render usa el puerto 10000 por defecto, pero mantenemos la flexibilidad
 const port = process.env.PORT || 10000;
 
-app.use(cors()); 
-app.use(express.json({ limit: '50mb' })); 
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
 
 /**
  * CAPA DE PRIVACIDAD
@@ -25,10 +22,10 @@ async function sanitizeMedicalImage(base64String) {
 
     try {
         const cleanImagenBuffer = await sharp(imageBuffer)
-            .rotate() 
-            .toBuffer(); 
+            .rotate()
+            .toBuffer();
 
-        return cleanImagenBuffer.toString('base64');  
+        return cleanImagenBuffer.toString('base64');
     } catch (error) {
         console.error("Error limpiando metadatos:", error);
         throw new Error("No se pudo procesar la imagen para limpieza de seguridad.");
@@ -36,26 +33,18 @@ async function sanitizeMedicalImage(base64String) {
 }
 
 app.get('/test', (req, res) => {
-    res.send("Servidor de Exámenes Médico Activo");
+    res.send("Servidor de Exámenes Médico Activo - Conexión Directa");
 });
 
 app.post('/examen', async (req, res) => {
     const { base64Image } = req.body;
-    
+
     if (!base64Image) {
         return res.status(400).json({ error: 'Faltan datos requeridos' });
     }
 
     try {
-        // 1. Limpieza de imagen
         const cleanBase64 = await sanitizeMedicalImage(base64Image);
-
-        // 2. Configuración del modelo (Usamos v1 para estabilidad)
-        // NOTA: No incluimos generationConfig aquí para evitar el error "Unknown name responseMimeType"
-         const model = genAI.getGenerativeModel(
-            { model: "models/gemini-1.5-flash" },
-            { apiVersion: "v1" }
-        );
 
         // El prompt es la clave para que no se comporte como un médico rígido
         const medicalPrompt  = `
@@ -97,22 +86,46 @@ app.post('/examen', async (req, res) => {
           }
         `;
 
-        const imagePart = {
-            inlineData: {
-                data: cleanBase64,
-                mimeType: "image/jpeg",
-            },
+        // CONFIGURACIÓN DE LLAMADA DIRECTA (Sin usar la SDK que da error 404)
+        const apiKey = process.env.GEMINI_API_KEY;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+        const payload = {
+            contents: [{
+                parts: [
+                    { text: medicalPrompt },
+                    {
+                        inline_data: {
+                            mime_type: "image/jpeg",
+                            data: cleanBase64
+                        }
+                    }
+                ]
+            }],
+            generationConfig: {
+                temperature: 0.4,
+                topP: 1,
+                topK: 32,
+                maxOutputTokens: 2048,
+            }
         };
 
-        // 3. Petición a Gemini
-        const result = await model.generateContent([medicalPrompt, imagePart]);
-        const response = await result.response;
-        let responseText = response.text();
+        const apiResponse = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
 
-        // 4. LIMPIEZA DE RESPUESTA (Vital para evitar errores de parseo)
-        // Quitamos posibles etiquetas markdown que la IA pueda agregar
+        const result = await apiResponse.json();
+
+        if (!apiResponse.ok) {
+            console.error("Error de API Google:", result);
+            throw new Error(result.error?.message || "Error en la comunicación con Google");
+        }
+
+        let responseText = result.candidates[0].content.parts[0].text;
         responseText = responseText.replace(/```json|```/g, "").trim();
-
+        
         const data = JSON.parse(responseText);
 
         if (!data.valido) {
@@ -121,27 +134,18 @@ app.post('/examen', async (req, res) => {
                 message: data.error
             });
         }
-        
+
         res.json({
             success: true,
             data: data
         });
 
     } catch (error) {
-        console.error("Error procesando el examen:", error);
-        
-        // Manejo de cuota agotada (429)
-        if (error.message.includes('429')) {
-            return res.status(429).json({ 
-                success: false, 
-                message: "Cuota de Google excedida. Intenta en un momento." 
-            });
-        }
-
-        res.status(500).json({ 
-            success: false, 
-            message: "Error interno en el servidor",
-            details: error.message 
+        console.error("Error crítico:", error.message);
+        res.status(500).json({
+            success: false,
+            message: "Error al procesar el examen",
+            details: error.message
         });
     }
 });
