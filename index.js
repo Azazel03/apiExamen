@@ -53,7 +53,7 @@ app.post('/examen', async (req, res) => {
         // 2. Configuración del modelo (Usamos v1 para estabilidad)
         // NOTA: No incluimos generationConfig aquí para evitar el error "Unknown name responseMimeType"
          const model = genAI.getGenerativeModel(
-            { model: "gemini-1.5-flash" },
+            { model: "models/gemini-1.5-flash" },
             { apiVersion: "v1" }
         );
 
