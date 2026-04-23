@@ -160,11 +160,20 @@ app.post('/_examen', async (req, res) => {
 });
 
 app.listen(port, '0.0.0.0', () => {
-    console.log(`Servidor escuchando en puerto ${port}`);
     const checkModels = async () => {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
-        const data = await res.json();
-        console.log("Modelos disponibles:", data.models.map(m => m.name));
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
+            const data = await res.json();
+            
+            if (data.error) {
+                console.error("Error detallado de Google:", JSON.stringify(data.error, null, 2));
+                return;
+            }
+
+            console.log("Modelos disponibles:", data.models?.map(m => m.name));
+        } catch (err) {
+            console.error("Error de red o fetch:", err.message);
+        }
     };
     checkModels();
 });
