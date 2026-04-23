@@ -93,7 +93,7 @@ app.post('/examen', async (req, res) => {
 
         // 2. Configurar el modelo con modo JSON estricto
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: "gemini-2.0-flash",
             generationConfig: {
                 temperature: 0.1, // Baja temperatura para mayor precisión médica
                 responseMimeType: "application/json",
