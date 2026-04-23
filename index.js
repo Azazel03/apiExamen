@@ -115,7 +115,7 @@ app.post('/examen', async (req, res) => {
         const text = response.text();
 
         // 4. Parsear respuesta (Al ser application/json, viene directo)
-        const data = JSON.parse(responseText);
+        const data = JSON.parse(text);
 
         if (data.valido === false) {
             return res.status(422).json({
