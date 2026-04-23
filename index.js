@@ -41,7 +41,7 @@ app.get('/test', (req, res) => {
     res.send("Servidor de Exámenes Médico Activo - Conexión Directa");
 });
 
-app.post('/_examen', async (req, res) => {
+app.post('/examen', async (req, res) => {
     const { base64Image } = req.body;
 
     if (!base64Image) {
