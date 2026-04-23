@@ -131,6 +131,15 @@ app.post('/examen', async (req, res) => {
 
     } catch (error) {
         console.error("Error crítico en backend:", error.message);
+        
+        if (error.message.includes("429")) {
+            console.warn("Cuota de Google excedida temporalmente.");
+            return res.status(429).json({
+                success: false,
+                message: "Estamos procesando muchas solicitudes. Por favor, intenta de nuevo en 30 segundos."
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: "Error al procesar el examen médico",
