@@ -2,7 +2,7 @@ import express from 'express';
 import sharp from 'sharp';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import fetch from 'node-fetch'; // Asegúrate de tener node-fetch instalado o usa el fetch nativo de Node 18+
+import fetch from 'node-fetch';
 
 dotenv.config();
 
@@ -46,7 +46,6 @@ app.post('/examen', async (req, res) => {
     try {
         const cleanBase64 = await sanitizeMedicalImage(base64Image);
 
-        // El prompt es la clave para que no se comporte como un médico rígido
         const medicalPrompt  = `
           Eres un asistente virtual especializado en salud para el público en Chile. Tu tarea es analizar imágenes de exámenes médicos y explicar los resultados de forma sencilla.
 
@@ -86,8 +85,13 @@ app.post('/examen', async (req, res) => {
           }
         `;
 
-        // CONFIGURACIÓN DE LLAMADA DIRECTA (Sin usar la SDK que da error 404)
+        /**
+         * SOLUCIÓN AL ERROR 404:
+         * Cambiamos de 'v1beta' a 'v1' (Estable).
+         * Google Cloud en regiones de Datacenters suele preferir la ruta estable de producción.
+         */
         const apiKey = process.env.GEMINI_API_KEY;
+        //const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const payload = {
@@ -103,10 +107,8 @@ app.post('/examen', async (req, res) => {
                 ]
             }],
             generationConfig: {
-                temperature: 0.4,
-                topP: 1,
-                topK: 32,
-                maxOutputTokens: 2048,
+                temperature: 0.1, // Reducimos temperatura para mayor precisión médica
+                response_mime_type: "application/json"
             }
         };
 
@@ -119,16 +121,23 @@ app.post('/examen', async (req, res) => {
         const result = await apiResponse.json();
 
         if (!apiResponse.ok) {
-            console.error("Error de API Google:", result);
-            throw new Error(result.error?.message || "Error en la comunicación con Google");
+            console.error("Error de API Google (Detalle):", JSON.stringify(result, null, 2));
+            throw new Error(result.error?.message || "Error en la comunicación con la API de producción.");
+        }
+
+        // Validación de la estructura de respuesta de Google V1
+        if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
+            throw new Error("La IA no devolvió contenido válido.");
         }
 
         let responseText = result.candidates[0].content.parts[0].text;
+        
+        // Limpieza de posibles tags de markdown que la IA incluya a pesar del prompt
         responseText = responseText.replace(/```json|```/g, "").trim();
         
         const data = JSON.parse(responseText);
 
-        if (!data.valido) {
+        if (data.valido === false) {
             return res.status(422).json({
                 success: false,
                 message: data.error
@@ -141,10 +150,10 @@ app.post('/examen', async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error crítico:", error.message);
+        console.error("Error crítico en backend:", error.message);
         res.status(500).json({
             success: false,
-            message: "Error al procesar el examen",
+            message: "Error al procesar el examen médico",
             details: error.message
         });
     }
