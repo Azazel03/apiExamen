@@ -3,11 +3,15 @@ import sharp from 'sharp';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import fetch from 'node-fetch';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 10000;
+
+// Configuración de Google AI (Asegúrate de que la nueva clave esté en Render)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -17,12 +21,13 @@ app.use(express.json({ limit: '50mb' }));
  * Limpia metadatos y corrige orientación
  */
 async function sanitizeMedicalImage(base64String) {
+    // Eliminar prefijo data:image/... si existe
     const base64Data = base64String.replace(/^data:image\/\w+;base64,/, "");
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
     try {
         const cleanImagenBuffer = await sharp(imageBuffer)
-            .rotate()
+            .rotate() // Corrige orientación según metadatos antes de borrarlos
             .toBuffer();
 
         return cleanImagenBuffer.toString('base64');
@@ -44,6 +49,7 @@ app.post('/_examen', async (req, res) => {
     }
 
     try {
+        // 1. Sanitizar la imagen
         const cleanBase64 = await sanitizeMedicalImage(base64Image);
 
         const medicalPrompt  = `
@@ -85,56 +91,30 @@ app.post('/_examen', async (req, res) => {
           }
         `;
 
-        /**
-         * SOLUCIÓN AL ERROR 404:
-         * Cambiamos de 'v1beta' a 'v1' (Estable).
-         * Google Cloud en regiones de Datacenters suele preferir la ruta estable de producción.
-         */
-        const apiKey = process.env.GEMINI_API_KEY;
-        //const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-        const payload = {
-            contents: [{
-                parts: [
-                    { text: medicalPrompt },
-                    {
-                        inline_data: {
-                            mime_type: "image/jpeg",
-                            data: cleanBase64
-                        }
-                    }
-                ]
-            }],
+        // 2. Configurar el modelo con modo JSON estricto
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash",
             generationConfig: {
-                temperature: 0.1, // Reducimos temperatura para mayor precisión médica
-                response_mime_type: "application/json"
+                temperature: 0.1, // Baja temperatura para mayor precisión médica
+                responseMimeType: "application/json",
             }
-        };
-
-        const apiResponse = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
         });
 
-        const result = await apiResponse.json();
+        // 3. Ejecutar la petición
+        const result = await model.generateContent([
+            { text: medicalPrompt },
+            {
+                inlineData: {
+                    mimeType: "image/jpeg",
+                    data: cleanBase64
+                }
+            }
+        ]);
 
-        if (!apiResponse.ok) {
-            console.error("Error de API Google (Detalle):", JSON.stringify(result, null, 2));
-            throw new Error(result.error?.message || "Error en la comunicación con la API de producción.");
-        }
+        const response = await result.response;
+        const text = response.text();
 
-        // Validación de la estructura de respuesta de Google V1
-        if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
-            throw new Error("La IA no devolvió contenido válido.");
-        }
-
-        let responseText = result.candidates[0].content.parts[0].text;
-        
-        // Limpieza de posibles tags de markdown que la IA incluya a pesar del prompt
-        responseText = responseText.replace(/```json|```/g, "").trim();
-        
+        // 4. Parsear respuesta (Al ser application/json, viene directo)
         const data = JSON.parse(responseText);
 
         if (data.valido === false) {
@@ -176,4 +156,4 @@ app.listen(port, '0.0.0.0', () => {
         }
     };
     checkModels();
-});
+}); 
