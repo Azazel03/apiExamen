@@ -36,7 +36,7 @@ app.get('/test', (req, res) => {
     res.send("Servidor de Exámenes Médico Activo - Conexión Directa");
 });
 
-app.post('/examen', async (req, res) => {
+app.post('/_examen', async (req, res) => {
     const { base64Image } = req.body;
 
     if (!base64Image) {
@@ -161,4 +161,10 @@ app.post('/examen', async (req, res) => {
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Servidor escuchando en puerto ${port}`);
+    const checkModels = async () => {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
+        const data = await res.json();
+        console.log("Modelos disponibles:", data.models.map(m => m.name));
+    };
+    checkModels();
 });
